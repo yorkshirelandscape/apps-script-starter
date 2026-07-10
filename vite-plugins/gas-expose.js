@@ -5,13 +5,50 @@
  * functions like onOpen(e) or other custom functions directly.
  * @returns {import('vite').Plugin}
  */
+
+/**
+ * Finds the JSDoc comment (if any) immediately preceding a function's
+ * declaration in the bundled code, so it can be copied onto the
+ * generated global wrapper below. Apps Script's "Open in new tab"
+ * library documentation view (and editor autocomplete) only reads
+ * comments directly above an actual top-level global function - the
+ * real JSDoc otherwise stays buried inside the IIFE, attached to a
+ * differently-scoped inner function of the same name, and never
+ * surfaces there at all.
+ */
+function extractJsDoc(code, fnName) {
+  const pattern = new RegExp(`\\bfunction\\s+${fnName}\\s*\\(`, 'g');
+  let match = pattern.exec(code);
+  while (match) {
+    const before = code.slice(0, match.index);
+    // A doc comment's own example code can itself contain text like
+    // "function onOpen() {...}" - skip any match that falls inside an
+    // still-open comment block rather than at a real declaration.
+    const insideComment = before.lastIndexOf('/**') > before.lastIndexOf('*/');
+    if (!insideComment) {
+      const trimmedBefore = before.replace(/\s+$/, '');
+      if (!trimmedBefore.endsWith('*/')) {
+        return null;
+      }
+      const commentStart = trimmedBefore.lastIndexOf('/**');
+      return commentStart === -1 ? null : trimmedBefore.slice(commentStart);
+    }
+    match = pattern.exec(code);
+  }
+  return null;
+}
+
 const viteExposeGasFunctions = () => ({
   name: 'vite-expose-gas-functions',
   generateBundle(options, bundle) {
     const entryChunk = Object.values(bundle).find((chunk) => chunk.type === 'chunk' && chunk.isEntry);
     if (entryChunk?.exports?.length > 0) {
       const exposureCode = entryChunk.exports
-        .map((fnName) => `function ${fnName}(...args) { return ${options.name}.${fnName}(...args); }`)
+        .map((fnName) => {
+          const wrapper = `function ${fnName}(...args) { return ${options.name}.${fnName}(...args); }`;
+          const jsdoc = extractJsDoc(entryChunk.code, fnName);
+          return jsdoc ? `${jsdoc.replace(/^\t+/gm, '')}\n${wrapper}` : wrapper;
+        })
         .join('\n');
       entryChunk.code += `\n\n${exposureCode}`;
     }
@@ -19,3 +56,4 @@ const viteExposeGasFunctions = () => ({
 });
 
 export default viteExposeGasFunctions;
+export { extractJsDoc };
