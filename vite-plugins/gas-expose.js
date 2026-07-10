@@ -17,21 +17,30 @@
  * surfaces there at all.
  */
 function extractJsDoc(code, fnName) {
-  const pattern = new RegExp(`\\bfunction\\s+${fnName}\\s*\\(`, 'g');
+  const escapedName = fnName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`\\bfunction\\s+${escapedName}\\s*\\(`, 'g');
   let match = pattern.exec(code);
   while (match) {
     const before = code.slice(0, match.index);
     // A doc comment's own example code can itself contain text like
-    // "function onOpen() {...}" - skip any match that falls inside an
-    // still-open comment block rather than at a real declaration.
-    const insideComment = before.lastIndexOf('/**') > before.lastIndexOf('*/');
+    // "function onOpen() {...}" - skip any match that falls inside a
+    // still-open comment block (JSDoc or not) rather than at a real
+    // declaration.
+    const insideComment = before.lastIndexOf('/*') > before.lastIndexOf('*/');
     if (!insideComment) {
       const trimmedBefore = before.replace(/\s+$/, '');
-      if (!trimmedBefore.endsWith('*/')) {
-        return null;
+      if (trimmedBefore.endsWith('*/')) {
+        // Block comments can't nest, so the nearest preceding "/*" is
+        // necessarily this comment's own opener - not just any
+        // earlier "/**", which could belong to a different JSDoc
+        // separated from this function by an intervening plain
+        // (non-JSDoc) comment, e.g. a bundler-inserted "/* @__PURE__ */".
+        const commentStart = trimmedBefore.lastIndexOf('/*');
+        if (commentStart !== -1 && trimmedBefore.startsWith('/**', commentStart)) {
+          return trimmedBefore.slice(commentStart);
+        }
       }
-      const commentStart = trimmedBefore.lastIndexOf('/**');
-      return commentStart === -1 ? null : trimmedBefore.slice(commentStart);
+      return null;
     }
     match = pattern.exec(code);
   }

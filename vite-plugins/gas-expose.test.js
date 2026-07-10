@@ -56,4 +56,29 @@ function doThing() {}
 
     expect(extractJsDoc(code, 'doThing')).toBeNull();
   });
+
+  it('matches function names containing regex metacharacters like $', () => {
+    const code = `
+/**
+ * A dollar-prefixed helper.
+ */
+function $helper() {}
+`;
+
+    expect(extractJsDoc(code, '$helper')).toBe('/**\n * A dollar-prefixed helper.\n */');
+  });
+
+  it('returns null when the immediately preceding comment is not a JSDoc, even if an earlier unrelated JSDoc exists', () => {
+    const code = `
+/**
+ * JSDoc for a completely different function.
+ */
+function otherFunction() {}
+
+/* @__PURE__ */
+function doThing() {}
+`;
+
+    expect(extractJsDoc(code, 'doThing')).toBeNull();
+  });
 });
